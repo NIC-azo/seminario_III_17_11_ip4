@@ -46,6 +46,9 @@ def main():
 
     print(f"Iniciando Nodo Edge Optimizado [{VEHICULO_ID}] - Presiona 'q' para salir.")
 
+    tiempo_ultima_peticion = 0
+    FPS_RED = 4  # Enviaremos solo 4 fotos por segundo al servidor
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -57,8 +60,10 @@ def main():
         imagen_bytes = buffer.tobytes()
         tamano_bits = len(imagen_bytes) * 8
 
-        # 2. Enviar a servidor SOLO si el hilo anterior ya terminó (Evita encolar peticiones)
-        if not peticion_en_curso:
+        # 2. Control de Muestreo: Solo enviar si pasaron 0.25 seg y el hilo está libre
+        tiempo_actual = time.time()
+        if not peticion_en_curso and (tiempo_actual - tiempo_ultima_peticion) >= (1.0 / FPS_RED):
+            tiempo_ultima_peticion = tiempo_actual
             peticion_en_curso = True
             hilo = threading.Thread(target=tarea_analisis_red, args=(imagen_bytes, tamano_bits))
             hilo.daemon = True
