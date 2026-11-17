@@ -19,10 +19,10 @@ peticion_en_curso = False
 class CamaraEdge:
     """Hilo dedicado EXCLUSIVAMENTE a vaciar el buffer de la webcam para eliminar el lag"""
     def __init__(self, src=0):
-        self.cap = cv2.VideoCapture(src)
-        # Puedes usar alta resolución original sin miedo al lag
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        # Forzar DirectShow (CAP_DSHOW) elimina el 90% del lag en Windows 11
+        self.cap = cv2.VideoCapture(src, cv2.CAP_DSHOW)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         self.ret, self.frame = self.cap.read()
         self.running = True
         self.thread = threading.Thread(target=self._update, daemon=True)
