@@ -3,10 +3,12 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 import os
 
 # Emulación de base de datos local (similar a Azure SQL)
-DATABASE_URL = "sqlite:///./storage/incidentes.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STORAGE_DIR = os.path.join(BASE_DIR, "storage")
+os.makedirs(STORAGE_DIR, exist_ok=True)
 
-# Asegurar que el directorio storage exista
-os.makedirs('./storage', exist_ok=True)
+DB_PATH = os.path.join(STORAGE_DIR, "incidentes.db")
+DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

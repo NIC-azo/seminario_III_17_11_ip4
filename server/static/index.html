@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FleetGuard DMS - Edge Cabina & Monitoreo</title>
+    <!-- MediaPipe Face Mesh & Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <style>
+        :root {
+            --bg-color: #0f141c;
+            --card-bg: #1a2332;
+            --primary: #00d26a;
+            --danger: #f8312f;
+            --warning: #f5a623;
+            --text-main: #f0f4f8;
+            --text-muted: #8b9bb4;
+            --border-color: #2b3a4f;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .header-bar {
+            width: 100%;
+            max-width: 1200px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            margin-bottom: 15px;
+            border: 1px solid var(--border-color);
+        }
+
+        .header-bar h1 {
+            font-size: 1.3rem;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .config-strip {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.9rem;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .badge-success { background: rgba(0, 210, 106, 0.2); color: var(--primary); border: 1px solid var(--primary); }
+        .badge-danger { background: rgba(248, 49, 47, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+        .badge-warning { background: rgba(245, 166, 35, 0.2); color: var(--warning); border: 1px solid var(--warning); }
+
+        .main-layout {
+            width: 100%;
+            max-width: 1200px;
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 20px;
+        }
+
+        @media (max-width: 992px) {
+            .main-layout { grid-template-columns: 1fr; }
+        }
+
+        .cabina-card {
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+
+        .canvas-container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            max-width: 100%;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+            border: 3px solid var(--primary);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .canvas-container.alerta-activa {
+            border-color: var(--danger);
+            animation: pulse-danger 0.6s infinite alternate;
+        }
+
+        .canvas-container.alerta-cierre {
+            border-color: var(--warning);
+        }
+
+        @keyframes pulse-danger {
+            from { box-shadow: 0 0 10px rgba(248, 49, 47, 0.4); }
+            to { box-shadow: 0 0 30px rgba(248, 49, 47, 0.9); }
+        }
+
+        #outputCanvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .hud-overlay {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            right: 12px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            text-shadow: 1px 1px 2px black;
+        }
+
+        .hud-panel {
+            background: rgba(10, 16, 26, 0.75);
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(4px);
+        }
+
+        .status-banner {
+            width: 100%;
+            margin-top: 14px;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 1.1rem;
+            font-weight: 700;
+            background: rgba(0, 210, 106, 0.15);
+            color: var(--primary);
+            border: 1px solid var(--primary);
+            transition: all 0.2s ease;
+        }
+
+        .status-banner.alerta {
+            background: rgba(248, 49, 47, 0.25);
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+
+        .side-card {
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            height: fit-content;
+        }
+
+        .side-card h2 {
+            font-size: 1.1rem;
+            margin: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .metric-box {
+            background: rgba(15, 20, 28, 0.6);
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        .metric-val {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #4da3ff;
+            margin-top: 4px;
+        }
+
+        .metric-lbl {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .incidents-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 380px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .incident-item {
+            background: rgba(15, 20, 28, 0.7);
+            border-radius: 8px;
+            border-left: 4px solid var(--danger);
+            padding: 8px 10px;
+            display: flex;
+            gap: 10px;
+            font-size: 0.8rem;
+            align-items: center;
+        }
+
+        .incident-thumb {
+            width: 60px;
+            height: 45px;
+            border-radius: 4px;
+            object-fit: cover;
+            border: 1px solid var(--border-color);
+            background: #000;
+        }
+
+        .incident-info {
+            flex: 1;
+        }
+
+        .incident-title {
+            font-weight: 700;
+            color: var(--danger);
+            margin-bottom: 2px;
+        }
+
+        .incident-meta {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        .btn {
+            background: #23527c;
+            color: white;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: #337ab7; }
+        .btn-refresh { font-size: 0.75rem; padding: 4px 8px; }
+
+        input, select {
+            background: #0f141c;
+            color: white;
+            border: 1px solid var(--border-color);
+            padding: 5px 8px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Encabezado & Barra de Configuración -->
+    <div class="header-bar">
+        <h1>
+            <span>🛡️ FleetGuard DMS</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: normal;">| Cabina Virtual Edge</span>
+        </h1>
+        <div class="config-strip">
+            <label>Vehículo:
+                <input type="text" id="vehiculoInput" value="BUS-04" style="width: 75px;" />
+            </label>
+            <label>API Key:
+                <input type="password" id="apiKeyInput" value="fleetguard_token_secreto_2026" style="width: 140px;" />
+            </label>
+            <button class="btn" onclick="conectarWebSocket()">Conectar</button>
+            <span id="wsStatusBadge" class="badge badge-warning">Conectando...</span>
+        </div>
+    </div>
+
+    <!-- Layout Principal -->
+    <div class="main-layout">
+        
+        <!-- Tarjeta de Monitoreo de Video -->
+        <div class="cabina-card">
+            <video id="videoElement" autoplay playsinline style="display:none;"></video>
+            
+            <div id="canvasContainer" class="canvas-container">
+                <canvas id="outputCanvas" width="640" height="480"></canvas>
+                
+                <!-- HUD en vivo sobre el video -->
+                <div class="hud-overlay">
+                    <div class="hud-panel">
+                        <div>EYE RATIO: <span id="hudEar" style="color:#00d26a;">--</span></div>
+                        <div>VENTANA: <span id="hudTimer" style="color:#fff;">0.0s / 1.5s</span></div>
+                    </div>
+                    <div class="hud-panel" style="text-align: right;">
+                        <div>CLOUD IA: <span id="hudYolo" style="color:#4da3ff;">SIN_INFERENCIA</span></div>
+                        <div>TELEMETRÍA: <span id="hudNet">0 Kbps</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Banner de Alerta Dinámica -->
+            <div id="statusBanner" class="status-banner">
+                Conducción Segura
+            </div>
+        </div>
+
+        <!-- Panel Lateral: Métricas y Storage Cloud -->
+        <div class="side-card">
+            <h2>
+                <span>Métricas de Cabina</span>
+                <span id="fpsBadge" style="font-size: 0.8rem; color: #4da3ff;">0 FPS</span>
+            </h2>
+
+            <div class="metric-grid">
+                <div class="metric-box">
+                    <div class="metric-lbl">Ancho de Banda</div>
+                    <div class="metric-val" id="metricBw">0.0 Kbps</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-lbl">Frames Muestreo</div>
+                    <div class="metric-val" id="metricFrames">0</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-lbl">EAR Actual</div>
+                    <div class="metric-val" id="metricEar">0.00</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-lbl">Ojos Cerrados</div>
+                    <div class="metric-val" id="metricCierre">0.0s</div>
+                </div>
+            </div>
+
+            <h2>
+                <span>Evidencias Cloud (/storage)</span>
+                <button class="btn btn-refresh" onclick="cargarIncidentes()">Actualizar</button>
+            </h2>
+
+            <div class="incidents-list" id="incidentsList">
+                <div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px;">
+                    Cargando incidentes registrados...
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Sonido de Alerta de Respaldo -->
+    <audio id="alarmSound" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+
+    <script>
+        // Configuración inicial de parámetros
+        const urlParams = new URLSearchParams(window.location.search);
+        const vehiculoInput = document.getElementById('vehiculoInput');
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        
+        if (urlParams.get('id')) vehiculoInput.value = urlParams.get('id');
+        if (urlParams.get('token')) apiKeyInput.value = urlParams.get('token');
+        if (urlParams.get('api_key')) apiKeyInput.value = urlParams.get('api_key');
+
+        const videoElement = document.getElementById('videoElement');
+        const canvasElement = document.getElementById('outputCanvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const canvasContainer = document.getElementById('canvasContainer');
+        const statusBanner = document.getElementById('statusBanner');
+        const wsStatusBadge = document.getElementById('wsStatusBadge');
+        
+        // Elementos HUD
+        const hudEar = document.getElementById('hudEar');
+        const hudTimer = document.getElementById('hudTimer');
+        const hudYolo = document.getElementById('hudYolo');
+        const hudNet = document.getElementById('hudNet');
+        const metricBw = document.getElementById('metricBw');
+        const metricFrames = document.getElementById('metricFrames');
+        const metricEar = document.getElementById('metricEar');
+        const metricCierre = document.getElementById('metricCierre');
+        const fpsBadge = document.getElementById('fpsBadge');
+        const incidentsList = document.getElementById('incidentsList');
+
+        // Variables de Telemetría y Red
+        let ws = null;
+        let reconnectTimer = null;
+        let bytesSentLastSecond = 0;
+        let totalFramesSent = 0;
+        let fpsCounter = 0;
+        let lastFpsTimestamp = performance.now();
+
+        // Variables de Lógica Temporal (Anti-Falsos Positivos)
+        let closedStartTime = 0;
+        const EAR_THRESHOLD = 0.20;       // Umbral por debajo del cual se considera ojo cerrado
+        const MICROSLEEP_TIME_MS = 1500;  // 1.5 segundos mínimos continuos para ALERTA_CRITICA
+        let alertaCriticaTimer = null;
+        let ultimaAlertaYoloTiempo = 0;
+
+        // Generador de Alarma Sonora Web Audio API (No depende de conexión a internet)
+        let audioCtx = null;
+        function playSiren() {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(1200, now + 0.15);
+                osc.frequency.exponentialRampToValueAtTime(800, now + 0.3);
+                
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                osc.start(now);
+                osc.stop(now + 0.35);
+            } catch (e) {
+                const sound = document.getElementById('alarmSound');
+                if (sound) sound.play().catch(() => {});
+            }
+        }
+
+        // Conectar WebSocket con soporte dinámico de host y API Key
+        function conectarWebSocket() {
+            clearTimeout(reconnectTimer);
+            if (ws) {
+                ws.onclose = null;
+                ws.close();
+                ws = null;
+            }
+
+            const vehiculoId = vehiculoInput.value.trim() || "BUS-04";
+            const apiKey = apiKeyInput.value.trim();
+            const host = window.location.host || "localhost:8000";
+            const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+            const wsUrl = `${protocol}//${host}/ws/flota/${vehiculoId}?token=${encodeURIComponent(apiKey)}`;
+
+            wsStatusBadge.innerText = "Conectando...";
+            wsStatusBadge.className = "badge badge-warning";
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                wsStatusBadge.innerText = `● Conectado (${vehiculoId})`;
+                wsStatusBadge.className = "badge badge-success";
+                console.log("WebSocket conectado exitosamente a la nube FleetGuard.");
+                cargarIncidentes();
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.alerta) {
+                        hudYolo.innerText = `${data.evento} (${Math.round(data.confianza * 100)}%)`;
+                        hudYolo.style.color = "var(--danger)";
+                        ultimaAlertaYoloTiempo = Date.now();
+                        activarAlertaCritica(data.evento, (data.duracion_seg || 1.0));
+                    } else if (data.evento === "CONDUCCION_SEGURA") {
+                        hudYolo.innerText = `OK (${Math.round(data.confianza * 100)}%)`;
+                        hudYolo.style.color = "var(--primary)";
+                        // Si la última alerta fue hace más de 2 segundos y los ojos están abiertos, normalizar
+                        if (Date.now() - ultimaAlertaYoloTiempo > 2000 && closedStartTime === 0) {
+                            normalizarEstado();
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error al procesar mensaje WS:", e);
+                }
+            };
+
+            ws.onerror = (err) => {
+                console.warn("WebSocket error:", err);
+            };
+
+            ws.onclose = (event) => {
+                console.warn("WebSocket cerrado. Código:", event.code);
+                if (event.code === 1008) {
+                    wsStatusBadge.innerText = "✗ Rechazado (Token Inválido)";
+                    wsStatusBadge.className = "badge badge-danger";
+                    statusBanner.innerText = "ACCESO DENEGADO (HTTP 401 / Token Inválido). Verifique el API-Key.";
+                    statusBanner.className = "status-banner alerta";
+                } else {
+                    wsStatusBadge.innerText = "Desconectado (Reintentando...)";
+                    wsStatusBadge.className = "badge badge-danger";
+                    // Reconexión automática tras 2.5s
+                    reconnectTimer = setTimeout(conectarWebSocket, 2500);
+                }
+            };
+        }
+
+        // Cálculo geométrico de Eye Aspect Ratio (EAR)
+        function calculateEAR(landmarks, indices) {
+            const p1 = landmarks[indices[0]], p2 = landmarks[indices[1]];
+            const p3 = landmarks[indices[2]], p4 = landmarks[indices[3]];
+            const p5 = landmarks[indices[4]], p6 = landmarks[indices[5]];
+            
+            const v1 = Math.hypot(p2.x - p6.x, p2.y - p6.y);
+            const v2 = Math.hypot(p3.x - p5.x, p3.y - p5.y);
+            const h = Math.hypot(p1.x - p4.x, p1.y - p4.y);
+            return (v1 + v2) / (2.0 * h);
+        }
+
+        function activarAlertaCritica(tipo, duracionSeg = 1.5) {
+            canvasContainer.className = "canvas-container alerta-activa";
+            statusBanner.className = "status-banner alerta";
+            statusBanner.innerText = `¡ALERTA CRÍTICA!: ${tipo}`;
+            playSiren();
+
+            clearTimeout(alertaCriticaTimer);
+            alertaCriticaTimer = setTimeout(() => {
+                if (closedStartTime === 0 && (Date.now() - ultimaAlertaYoloTiempo > 2000)) {
+                    normalizarEstado();
+                }
+            }, 2500);
+
+            setTimeout(cargarIncidentes, 900);
+        }
+
+        function normalizarEstado() {
+            canvasContainer.className = "canvas-container";
+            statusBanner.className = "status-banner";
+            statusBanner.innerText = "Conducción Segura";
+        }
+
+        // Procesamiento en tiempo real de MediaPipe Face Mesh
+        function onResults(results) {
+            // Medición de FPS
+            fpsCounter++;
+            const now = performance.now();
+            if (now - lastFpsTimestamp >= 1000) {
+                fpsBadge.innerText = `${fpsCounter} FPS`;
+                fpsCounter = 0;
+                lastFpsTimestamp = now;
+            }
+
+            // Dibujar video original
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+                
+                // Índices oficiales de MediaPipe para el contorno de ambos ojos
+                const leftEye = [33, 160, 158, 133, 153, 144];
+                const rightEye = [362, 385, 387, 263, 373, 380];
+                
+                const leftEAR = calculateEAR(landmarks, leftEye);
+                const rightEAR = calculateEAR(landmarks, rightEye);
+                const avgEAR = (leftEAR + rightEAR) / 2;
+
+                // Actualizar métricas HUD
+                hudEar.innerText = avgEAR.toFixed(2);
+                metricEar.innerText = avgEAR.toFixed(2);
+
+                // Lógica de Ventana Temporal (Anti-Falsos Positivos)
+                if (avgEAR < EAR_THRESHOLD) {
+                    if (closedStartTime === 0) {
+                        closedStartTime = Date.now();
+                    }
+                    const elapsedMs = Date.now() - closedStartTime;
+                    const elapsedSec = (elapsedMs / 1000).toFixed(1);
+                    
+                    hudTimer.innerText = `${elapsedSec}s / 1.5s`;
+                    metricCierre.innerText = `${elapsedSec}s`;
+                    hudEar.style.color = "var(--warning)";
+
+                    if (elapsedMs >= MICROSLEEP_TIME_MS) {
+                        // Disparar Alerta Crítica de Microsueño
+                        activarAlertaCritica("MICROSUEÑO_DETECTADO", (elapsedMs / 1000));
+                        enviarEventoCritico("MICROSUEÑO_DETECTADO", (elapsedMs / 1000));
+                        closedStartTime = Date.now(); // Reiniciar ventana para evitar spam consecutivo
+                    } else {
+                        // Parpadeo normal en progreso (< 1.5s)
+                        if (!statusBanner.classList.contains('alerta')) {
+                            canvasContainer.className = "canvas-container alerta-cierre";
+                            statusBanner.innerText = `Parpadeo detectado (${elapsedSec}s)...`;
+                        }
+                    }
+                } else {
+                    // Ojos abiertos: resetear acumulador temporal
+                    closedStartTime = 0;
+                    hudTimer.innerText = "0.0s / 1.5s";
+                    metricCierre.innerText = "0.0s";
+                    hudEar.style.color = "var(--primary)";
+                    
+                    // Si no hay alerta de YOLO reciente activa, normalizar a verde
+                    if (Date.now() - ultimaAlertaYoloTiempo > 2000) {
+                        normalizarEstado();
+                    }
+                }
+            } else {
+                // Rostro no visible
+                hudEar.innerText = "NO ROSTRO";
+                hudEar.style.color = "var(--text-muted)";
+            }
+            canvasCtx.restore();
+        }
+
+        // Enviar evento crítico al servidor
+        function enviarEventoCritico(evento, duracionSeg) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const frameB64 = compressFrame(0.75);
+                const payload = JSON.stringify({
+                    tipo: "evento_critico",
+                    evento: evento,
+                    duracion_seg: parseFloat(duracionSeg),
+                    confianza_custom: 1.0,
+                    imagen: frameB64
+                });
+                ws.send(payload);
+                registrarBytesEnviados(payload.length);
+            }
+        }
+
+        // Compresión optimizada JPEG a 320x240 para micro-payloads LAN
+        function compressFrame(calidad = 0.7) {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 320;
+            tempCanvas.height = 240;
+            const ctx = tempCanvas.getContext('2d');
+            ctx.drawImage(canvasElement, 0, 0, 320, 240);
+            return tempCanvas.toDataURL('image/jpeg', calidad).split(',')[1];
+        }
+
+        function registrarBytesEnviados(bytes) {
+            bytesSentLastSecond += bytes;
+            totalFramesSent++;
+            metricFrames.innerText = totalFramesSent;
+        }
+
+        // Medidor de ancho de banda consumido en vivo (Kbps)
+        setInterval(() => {
+            const kbps = ((bytesSentLastSecond * 8) / 1024).toFixed(1);
+            hudNet.innerText = `${kbps} Kbps`;
+            metricBw.innerText = `${kbps} Kbps`;
+            bytesSentLastSecond = 0;
+        }, 1000);
+
+        // Muestreo Periódico para Inferencia YOLOv8 en Nube Privada (Cada 500ms = 2 FPS para respuesta en tiempo real)
+        setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const frameB64 = compressFrame(0.65);
+                const payload = JSON.stringify({
+                    tipo: "muestreo_yolo",
+                    imagen: frameB64
+                });
+                ws.send(payload);
+                registrarBytesEnviados(payload.length);
+            }
+        }, 500);
+
+        // Inicializar MediaPipe Face Mesh
+        const faceMesh = new window.FaceMesh({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+        });
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        faceMesh.onResults(onResults);
+
+        // Iniciar Cámara Web
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await faceMesh.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+        camera.start();
+
+        // Consulta de Evidencias e Incidentes Cloud (GET /flota/incidentes)
+        async function cargarIncidentes() {
+            const apiKey = apiKeyInput.value.trim();
+            try {
+                const res = await fetch(`/flota/incidentes?api_key=${encodeURIComponent(apiKey)}`);
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        incidentsList.innerHTML = `<div style="color:var(--danger); font-size:0.8rem; text-align:center;">401 Unauthorized: API Key inválida</div>`;
+                    }
+                    return;
+                }
+                const data = await res.json();
+                if (!data || data.length === 0) {
+                    incidentsList.innerHTML = `<div style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding:15px;">Sin incidentes registrados aún.</div>`;
+                    return;
+                }
+
+                incidentsList.innerHTML = data.slice(0, 10).map(inc => `
+                    <div class="incident-item">
+                        <a href="${inc.evidencia_url}" target="_blank" title="Ver captura en Blob Storage">
+                            <img class="incident-thumb" src="${inc.evidencia_url}" onerror="this.src='https://via.placeholder.com/60x45?text=Foto'" />
+                        </a>
+                        <div class="incident-info">
+                            <div class="incident-title">${inc.evento}</div>
+                            <div class="incident-meta">
+                                <b>${inc.vehiculo_id}</b> | Dur: ${inc.duracion_seg}s | Conf: ${(inc.confianza_custom * 100).toFixed(0)}%
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error("Error al cargar incidentes:", err);
+            }
+        }
+
+        // Iniciar conexión y consulta inicial
+        window.addEventListener('DOMContentLoaded', () => {
+            conectarWebSocket();
+            // Desbloquear contexto de audio con cualquier click
+            document.body.addEventListener('click', () => {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+            }, { once: true });
+        });
+    </script>
+</body>
+</html>
